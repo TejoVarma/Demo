@@ -14,8 +14,8 @@ _ORDER_COLUMNS = (
 
 
 def _to_order(row: dict) -> dict:
-    product = row.pop("product")
-    return {**row, "product_name": product["name"]}
+    fields = {key: value for key, value in row.items() if key != "product"}
+    return {**fields, "product_name": row["product"]["name"]}
 
 
 async def _get_order(order_id: str) -> dict:
