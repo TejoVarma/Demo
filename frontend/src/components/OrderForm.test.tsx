@@ -1,12 +1,16 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { initialOrdersState, useOrdersStore } from '../stores/ordersStore'
 import { initialProductsState, useProductsStore } from '../stores/productsStore'
 import { mockFetchByRoute } from '../test/fetchMock'
 import { makeOrder, notebook, pen } from '../test/fixtures'
-import { OrderForm } from './OrderForm'
+import { OrderForm, SUCCESS_NOTICE_MS } from './OrderForm'
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 beforeEach(() => {
   useOrdersStore.setState(initialOrdersState)
@@ -121,5 +125,60 @@ describe('OrderForm', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Insufficient stock: only 1 left, requested 2')
     // Form keeps its values so the user can adjust the quantity.
     expect(screen.getByLabelText('Customer name')).toHaveValue('Asha')
+  })
+
+  it('hides the success message after a few seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    mockFetchByRoute({
+      'POST /api/orders': () => ({ status: 201, body: makeOrder() }),
+      'GET /api/products': () => ({ status: 200, body: [notebook, pen] }),
+    })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<OrderForm />)
+
+    await fillForm(user)
+    await user.click(screen.getByRole('button', { name: 'Place order' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Order placed')
+
+    await act(() => vi.advanceTimersByTimeAsync(SUCCESS_NOTICE_MS))
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('clears the success message as soon as the next order is started', async () => {
+    mockFetchByRoute({
+      'POST /api/orders': () => ({ status: 201, body: makeOrder() }),
+      'GET /api/products': () => ({ status: 200, body: [notebook, pen] }),
+    })
+    const user = userEvent.setup()
+    render(<OrderForm />)
+
+    await fillForm(user)
+    await user.click(screen.getByRole('button', { name: 'Place order' }))
+    expect(await screen.findByRole('status')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Customer name'), 'R')
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('keeps an error message until the user edits the form', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    mockFetchByRoute({
+      'POST /api/orders': () => ({ status: 409, body: { detail: 'Insufficient stock: only 1 left, requested 2' } }),
+      'GET /api/products': () => ({ status: 200, body: [notebook, pen] }),
+    })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<OrderForm />)
+
+    await fillForm(user)
+    await user.click(screen.getByRole('button', { name: 'Place order' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    await act(() => vi.advanceTimersByTimeAsync(SUCCESS_NOTICE_MS * 2))
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText('Quantity'))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

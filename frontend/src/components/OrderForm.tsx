@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react'
 
 import { formatPrice } from '../lib/format'
 import { useOrdersStore } from '../stores/ordersStore'
@@ -7,6 +7,7 @@ import { Notice } from './Panel'
 
 export const MAX_QUANTITY = 20
 export const MAX_NAME_LENGTH = 60
+export const SUCCESS_NOTICE_MS = 4000
 
 interface FieldErrors {
   product?: string
@@ -58,6 +59,19 @@ export function OrderForm() {
   const show = (field: keyof FieldErrors) => (submitted ? errors[field] : undefined)
   const trimmedLength = name.trim().length
 
+  // Success fades on its own; errors stay until the user edits the form or submits again.
+  useEffect(() => {
+    if (result?.tone !== 'success') return
+    const timer = setTimeout(() => setResult(null), SUCCESS_NOTICE_MS)
+    return () => clearTimeout(timer)
+  }, [result])
+
+  // Editing any field starts a new attempt, so the previous outcome no longer applies.
+  const edit = (setter: (value: string) => void) => (value: string) => {
+    setter(value)
+    setResult(null)
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     setSubmitted(true)
@@ -92,7 +106,7 @@ export function OrderForm() {
           <select
             id={`${id}-product`}
             value={productId}
-            onChange={(e) => setProductId(e.target.value)}
+            onChange={(e) => edit(setProductId)(e.target.value)}
             disabled={placing}
             {...errorProps(`${id}-product`, show('product'))}
             className={inputClass}
@@ -120,7 +134,7 @@ export function OrderForm() {
             id={`${id}-name`}
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => edit(setName)(e.target.value)}
             disabled={placing}
             autoComplete="name"
             {...errorProps(`${id}-name`, show('name'))}
@@ -137,7 +151,7 @@ export function OrderForm() {
             max={Math.min(MAX_QUANTITY, product?.stock ?? MAX_QUANTITY) || 1}
             step={1}
             value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
+            onChange={(e) => edit(setQuantity)(e.target.value)}
             disabled={placing}
             {...errorProps(`${id}-quantity`, show('quantity'))}
             className={inputClass}
